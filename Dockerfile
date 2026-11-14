@@ -1,0 +1,7 @@
+# One image for all Python services; docker-compose.yml starts it with a different command per service.
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app/ /app/
+ENV PYTHONUNBUFFERED=1

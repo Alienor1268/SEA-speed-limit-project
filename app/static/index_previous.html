@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speed Limit Control</title>
+<style>
+  :root {
+    --bg: #F3F1FB; --card: #FFFFFF; --ink: #1E1B2E; --muted: #6B6680; --line: #E6E2F3;
+    --violet: #7C3AED; --blue: #2563EB; --teal: #0D9488; --green: #16A34A; --amber: #D97706; --red: #DC2626; --pink: #DB2777;
+    --l80: #22C55E; --l70: #A3E635; --l60: #FACC15; --l50: #FB923C; --l40: #EF4444;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15131F; --card: #1F1C2C; --ink: #F1EFFA; --muted: #A7A2BC; --line: #2F2B40; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  header { padding: 16px 22px; color: #fff; background: linear-gradient(100deg, #7C3AED, #2563EB 55%, #0D9488); display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 21px; letter-spacing: .01em; }
+  header .model { margin-left: auto; font-size: 12.5px; background: rgba(255,255,255,.18); padding: 4px 10px; border-radius: 999px; }
+  main { max-width: 1240px; margin: 0 auto; min-width: 0; padding: 18px 16px 48px; display: grid; gap: 16px; }
+  .card { min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; border-top: 5px solid var(--c, var(--violet)); }
+  .card h2 { margin: 0 0 12px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(3, 1fr); }
+  .grid2 { display: grid; gap: 16px; grid-template-columns: 340px 1fr; }
+  @media (max-width: 980px) { .grid { grid-template-columns: 1fr 1fr; } .grid2 { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } .wide { grid-column: auto !important; } .scene { height: 260px; } .gantry { width: 280px; } }
+
+  /* ---------- controls ---------- */
+  .seg { display: inline-flex; border: 2px solid var(--violet); border-radius: 999px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; color: var(--violet); padding: 6px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+  .seg button.on { background: var(--violet); color: #fff; }
+  .ctl { margin: 12px 0 4px; display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+  .ctl b { color: var(--ink); font-size: 15px; }
+  input[type=range] { width: 100%; accent-color: var(--violet); }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  .btn { border: 0; border-radius: 12px; padding: 11px 10px; font: inherit; font-weight: 700; cursor: pointer; color: #fff; background: var(--violet); box-shadow: 0 3px 0 rgba(0,0,0,.18); }
+  .btn.play { background: var(--teal); } .btn.stop { background: var(--red); }
+  .btn:active { transform: translateY(2px); box-shadow: none; }
+  .btn:disabled { opacity: .55; cursor: wait; }
+  .error { color: var(--red); font-size: 13px; margin-top: 8px; }
+
+  /* ---------- the highway scene ---------- */
+  .scene { position: relative; height: 300px; border-radius: 16px; overflow: hidden; --dur: 5s;
+           background: linear-gradient(#7CC4FF, #CDEBFF 62%, #9ED38A 62%, #7BBF68); transition: background 1s; }
+  .scene.night { background: linear-gradient(#0B1636, #2B3A6B 62%, #2E4A35 62%, #24382A); }
+  .scene.ice { background: linear-gradient(#9DB7D6, #DCE8F5 62%, #E8F1FA 62%, #CFDDEB); }
+  .scene.night.ice { background: linear-gradient(#0B1636, #34477A 62%, #9FB2C8 62%, #7F93AB); }
+  .celestial { position: absolute; top: 14px; right: 26px; font-size: 46px; filter: drop-shadow(0 0 12px rgba(255,220,120,.7)); }
+  .stars { position: absolute; inset: 0 0 40% 0; opacity: 0; transition: opacity 1s; }
+  .scene.night .stars { opacity: 1; }
+  .stars span { position: absolute; font-size: 12px; animation: twinkle 2.4s infinite ease-in-out; }
+  @keyframes twinkle { 50% { opacity: .2; } }
+  .cloud { position: absolute; font-size: 38px; opacity: .9; animation: drift 40s linear infinite; }
+  @keyframes drift { from { transform: translateX(-120px); } to { transform: translateX(1400px); } }
+  .weather { position: absolute; inset: 0; pointer-events: none; }
+  .weather span { position: absolute; top: -20px; animation: fall linear infinite; }
+  @keyframes fall { to { transform: translateY(330px) rotate(200deg); } }
+  .fog { position: absolute; inset: 0; background: linear-gradient(transparent, rgba(255,255,255,.75)); opacity: 0; transition: opacity 1s; }
+  .scene.fog .fog { opacity: 1; }
+  .smog { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 40%, rgba(120,95,60,.55), rgba(90,80,70,.35) 60%, transparent);
+          opacity: 0; transition: opacity 1s; display: grid; place-items: start start; padding: 16px 20px; font-size: 13px; color: #fff; font-weight: 700; }
+  .scene.smog .smog { opacity: 1; }
+  .road { position: absolute; left: 0; right: 0; bottom: 0; height: 38%; background: #3A3D46; border-top: 6px solid #D1D5DB; }
+  .scene.ice .road { background: linear-gradient(#5A7290, #46607E); }
+  .lane { position: absolute; left: 0; right: 0; top: 48%; height: 5px;
+          background: repeating-linear-gradient(90deg, #FDE68A 0 40px, transparent 40px 80px); animation: lane var(--dur) linear infinite; }
+  @keyframes lane { to { background-position: -400px 0; } }
+  .car { position: absolute; font-size: 34px; right: -60px; animation: drive var(--dur) linear infinite; }
+  @keyframes drive { to { transform: translateX(calc(-100vw - 200px)); } }
+  .vehicle { position: absolute; font-size: 36px; bottom: 6%; right: -90px; display: none; }
+  .scene.salting .vehicle.salt { display: block; animation: drive 9s linear infinite; }
+  .scene.emergency .vehicle.amb { display: block; animation: drive 4s linear infinite, blink .5s steps(2) infinite; }
+  @keyframes blink { 50% { filter: drop-shadow(0 0 10px #ff2d2d); } }
+  .gantry { position: absolute; left: 50%; transform: translateX(-50%); top: 26px; width: 330px; height: 150px; }
+  .post { position: absolute; bottom: 0; width: 10px; height: 150px; background: #8B95A5; }
+  .post.l { left: 6px; } .post.r { right: 6px; }
+  .beam { position: absolute; top: 0; left: 0; right: 0; height: 92px; background: #1D1F27; border: 4px solid #8B95A5; border-radius: 6px;
+          display: flex; align-items: center; gap: 14px; padding: 0 14px; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+  .ring { width: 70px; height: 70px; border-radius: 50%; border: 8px solid #FF3B3B; display: grid; place-items: center; flex: none;
+          color: #FFF6D5; font: 800 28px/1 "Consolas", monospace; text-shadow: 0 0 8px #FFD36B; box-shadow: 0 0 14px rgba(255,59,59,.6); }
+  .ledtxt { color: #FFC24B; font: 700 14px/1.3 "Consolas", monospace; text-shadow: 0 0 6px #FF9F1C; text-transform: uppercase; }
+
+  /* ---------- decision ---------- */
+  .why { font-size: 16.5px; line-height: 1.6; margin: 4px 0 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .chip { padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 700; background: var(--bg); color: var(--muted); }
+  .chip.on { color: #fff; background: var(--cc); }
+  .bigsign { width: 118px; height: 118px; border-radius: 50%; background: #fff; border: 14px solid #E11D48; display: grid; place-items: center;
+             font-size: 44px; font-weight: 900; color: #111; flex: none; box-shadow: 0 6px 18px rgba(225,29,72,.25); }
+  .decision { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+
+  /* ---------- cards ---------- */
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tile { background: var(--bg); border-radius: 12px; padding: 8px 10px; }
+  .tile .k { font-size: 12px; color: var(--muted); } .tile .v { font-size: 17px; font-weight: 800; }
+  .bars { display: grid; gap: 8px; }
+  .bar { display: grid; grid-template-columns: 58px 1fr 40px; gap: 8px; align-items: center; font-size: 13px; font-weight: 600; }
+  .track { position: relative; height: 18px; border-radius: 999px; background: var(--bg); }
+  .fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; opacity: .55; }
+  .fill.pick { opacity: 1; outline: 3px solid var(--ink); }
+  .thr { position: absolute; top: -4px; bottom: -4px; width: 3px; background: var(--ink); border-radius: 2px; }
+  .gauge { position: relative; height: 16px; border-radius: 999px; background: linear-gradient(90deg, #22C55E, #FACC15 55%, #EF4444); margin: 10px 0 4px; }
+  .gauge i { position: absolute; top: -6px; width: 6px; height: 28px; background: var(--ink); border-radius: 3px; }
+  .gauge b { position: absolute; top: -18px; font-size: 11px; color: var(--muted); }
+  .big { font-size: 34px; font-weight: 900; color: var(--green); line-height: 1.1; }
+  .trees { font-size: 22px; letter-spacing: 2px; margin: 6px 0; word-break: break-all; }
+  .note { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  .alerts { display: grid; gap: 8px; }
+  .alert { display: grid; grid-template-columns: 36px 1fr; gap: 8px; align-items: start; padding: 9px 10px; border-radius: 12px; background: var(--bg); border-left: 5px solid var(--ac); }
+  .alert .ic { font-size: 24px; line-height: 1; }
+  .alert .to { font-size: 12px; font-weight: 800; color: var(--ac); text-transform: uppercase; letter-spacing: .03em; }
+  .alert.high { animation: pulse 1.4s infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--ac) 25%, transparent); } }
+  .tools { font-size: 12px; color: var(--muted); padding-left: 18px; margin: 6px 0 0; }
+
+  /* ---------- timeline ---------- */
+  .day { display: grid; grid-template-columns: repeat(24, 1fr); gap: 4px; }
+  @media (max-width: 760px) { .day { grid-template-columns: repeat(8, 1fr); } }
+  .cell { text-align: center; border-radius: 10px; padding: 6px 0 5px; background: var(--bg); font-size: 11px; color: var(--muted); cursor: pointer; border: 2px solid transparent; }
+  .cell.cur { border-color: var(--ink); }
+  .cell b { display: block; font-size: 14px; color: #1E1B2E; }
+  .cell[style] { color: rgba(0,0,0,.62); }
+  .cell .e { font-size: 12px; min-height: 16px; display: block; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .totals { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .total { background: var(--bg); border-radius: 12px; padding: 6px 12px; font-size: 13px; }
+  .total b { font-size: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛣️ Speed Limit Control</h1>
+  <span>🌙 night · 🧊 black ice · 😷 air quality · 🚑 first aid · 🧂 salt trucks · 🌍 CO₂</span>
+  <span class="model" id="model">🧠 model: loading…</span>
+</header>
+
+<main>
+  <div class="scene" id="scene">
+    <div class="stars" id="stars"></div>
+    <div class="cloud" style="top:18px;animation-delay:-8s">☁️</div>
+    <div class="cloud" style="top:60px;animation-delay:-25s;font-size:30px">☁️</div>
+    <div class="celestial" id="celestial">☀️</div>
+    <div class="weather" id="weather"></div>
+    <div class="fog"></div>
+    <div class="smog">😷 Smog – air quality is poor</div>
+    <div class="gantry"><div class="post l"></div><div class="post r"></div>
+      <div class="beam"><div class="ring" id="ledLimit">80</div><div class="ledtxt" id="ledTxt">Choose an hour<br>and press Decide</div></div></div>
+    <div class="road"><div class="lane"></div><div id="cars"></div></div>
+    <div class="vehicle salt">🧂🚛</div>
+    <div class="vehicle amb">🚑</div>
+  </div>
+
+  <div class="grid2">
+    <section class="card" style="--c: var(--violet)">
+      <h2>🎛️ Choose the hour</h2>
+      <div class="seg" id="years"><button class="on" data-y="N">Year N</button><button data-y="N+1">Year N+1</button></div>
+      <div class="ctl"><span>📅 Day of January</span><b id="dayLbl">9</b></div>
+      <input type="range" id="day" min="1" max="31" value="9">
+      <div class="ctl"><span>🕗 Hour</span><b id="hourLbl">20:00</b></div>
+      <input type="range" id="hour" min="0" max="23" value="20">
+      <div class="btns">
+        <button class="btn" id="go">🚦 Decide</button>
+        <button class="btn play" id="play">▶ Play the day</button>
+      </div>
+      <div id="err" class="error"></div>
+    </section>
+
+    <section class="card" style="--c: #E11D48">
+      <h2>🚦 Decision</h2>
+      <div class="decision">
+        <div class="bigsign" id="sign">–</div>
+        <div style="flex:1;min-width:240px">
+          <p class="why" id="why">Pick a day and an hour, then press <b>🚦 Decide</b> – or <b>▶ Play the day</b> to watch 24 hours go by.</p>
+          <div class="chips" id="chips"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="grid">
+    <section class="card" style="--c: var(--amber)">
+      <h2>🌡️ Conditions</h2>
+      <div class="tiles" id="tiles"><p class="note">No decision yet.</p></div>
+    </section>
+    <section class="card" style="--c: var(--violet)">
+      <h2>🧠 Neural network</h2>
+      <div class="bars" id="bars"><p class="note">No decision yet.</p></div>
+      <p class="note">Predicted near-accidents per hour. Black line = 1 per hour (REQ1). The outlined bar is the chosen limit.</p>
+    </section>
+    <section class="card" style="--c: var(--teal)">
+      <h2>🤖 Air quality (LLM)</h2>
+      <div id="aq"><p class="note">No decision yet.</p></div>
+    </section>
+    <section class="card" style="--c: var(--green)">
+      <h2>🌍 CO₂</h2>
+      <div id="co2"><p class="note">No decision yet.</p></div>
+    </section>
+    <section class="card wide" style="--c: var(--red); grid-column: span 2">
+      <h2>🚨 Alerts – first aid, police, salt trucks</h2>
+      <div class="alerts" id="alerts"><p class="note">No decision yet.</p></div>
+    </section>
+  </div>
+
+  <section class="card" style="--c: var(--blue)">
+    <h2>🗓️ The day at a glance</h2>
+    <div class="totals" id="totals"></div>
+    <div class="day" id="daygrid"></div>
+    <div class="legend"><span>🌙 dark</span><span>🧊 black ice</span><span>😷 poor air</span><span>🚑 accident</span><span>🧂 salt trucks</span>
+      <span style="color:var(--l80)">■ 80</span><span style="color:#84CC16">■ 70</span><span style="color:#EAB308">■ 60</span><span style="color:var(--l50)">■ 50</span><span style="color:var(--l40)">■ 40</span></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const LIMIT_COLOR = { 80: "var(--l80)", 70: "var(--l70)", 60: "var(--l60)", 50: "var(--l50)", 40: "var(--l40)" };
+const ALERT_COLOR = { winter: "var(--blue)", emergency: "var(--red)", traffic: "var(--amber)", weather: "var(--pink)" };
+let year = "N", playing = false;
+
+// stars and cars are decoration only
+$("stars").innerHTML = Array.from({ length: 22 }, () => `<span style="left:${Math.random()*100}%;top:${Math.random()*90}%;animation-delay:${-Math.random()*3}s">✨</span>`).join("");
+const CARS = ["🚗", "🚙", "🚕", "🚚", "🚐", "🏎️", "🚗", "🚙"];
+$("cars").innerHTML = CARS.map((c, i) => `<span class="car" style="top:${i % 2 ? 8 : 52}%;animation-delay:${-i * 0.62}s">${c}</span>`).join("");
+
+const hh = (h) => String(h).padStart(2, "0") + ":00";
+$("day").oninput = () => { $("dayLbl").textContent = $("day").value; };
+$("hour").oninput = () => { $("hourLbl").textContent = hh($("hour").value); };
+$("day").onchange = () => loadDay();
+document.querySelectorAll("#years button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#years button").forEach(x => x.classList.toggle("on", x === b)); year = b.dataset.y; loadDay();
+});
+
+async function api(path, body) {
+  const r = await fetch("/api/" + path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.detail || r.statusText);
+  return j;
+}
+const f = (v, d = 1) => (v === null || v === undefined) ? "–" : Number(v).toLocaleString("en", { maximumFractionDigits: d, minimumFractionDigits: d });
+
+function scene(res) {
+  const c = res.conditions, aq = res.air_quality || {}, alerts = res.alerts || [];
+  const s = $("scene");
+  const snowy = c.temperature_c < 0.5 && c.water_um > 300, rainy = c.water_um > 300 && !snowy;
+  s.classList.toggle("night", res.dark);
+  s.classList.toggle("ice", res.black_ice);
+  s.classList.toggle("fog", c.humidity_pct >= 95);
+  s.classList.toggle("smog", !!aq.poor);
+  s.classList.toggle("salting", alerts.some(a => a.type === "winter" && a.level !== "low"));
+  s.classList.toggle("emergency", alerts.some(a => a.type === "emergency"));
+  s.style.setProperty("--dur", (3.2 * 80 / res.final_limit).toFixed(2) + "s");
+  $("celestial").textContent = res.dark ? "🌙" : (c.humidity_pct >= 95 || rainy ? "🌥️" : "☀️");
+  const kind = snowy ? "❄️" : rainy ? "💧" : "";
+  $("weather").innerHTML = kind ? Array.from({ length: 28 }, () =>
+    `<span style="left:${Math.random()*100}%;font-size:${10 + Math.random()*10}px;animation-duration:${(snowy ? 3 : 1) + Math.random()*2}s;animation-delay:${-Math.random()*4}s">${kind}</span>`).join("") : "";
+  $("ledLimit").textContent = res.final_limit;
+  const msg = res.black_ice ? "🧊 Glatteis<br>black ice" : aq.reduction ? "😷 IG-L<br>air quality" : res.dark ? "🌙 Night<br>drive safe" : "✅ Good trip!";
+  $("ledTxt").innerHTML = msg + (alerts.some(a => a.type === "emergency") ? "<br>🚑 Accident ahead" : "");
+}
+
+function explain(res) {
+  const aq = res.air_quality || {}, parts = [];
+  if (res.dark || res.black_ice) {
+    const why = [res.dark && "🌙 it is dark", res.black_ice && "🧊 the road may be icy"].filter(Boolean).join(" and ");
+    parts.push(`Because ${why}, the 🧠 neural network checked the risk → <b>${res.nn_limit} km/h</b>.`);
+  } else parts.push("☀️ It is light and the road is not icy, so the neural network is not needed.");
+  if (aq.reduction) parts.push(`😷 The air is polluted (index ${aq.aq_index}), so the 🤖 LLM asked for <b>−${aq.reduction} km/h</b>.`);
+  else parts.push("🍃 The air quality is fine.");
+  parts.push(res.final_limit === 80 ? "✅ No reason to slow down: <b>80 km/h</b>." : `👉 The lowest limit wins: <b>${res.final_limit} km/h</b>.`);
+  return parts.join(" ");
+}
+
+function show(res) {
+  scene(res);
+  $("sign").textContent = res.final_limit;
+  $("sign").style.borderColor = "#E11D48";
+  $("why").innerHTML = explain(res);
+  const aq = res.air_quality || {}, c = res.conditions;
+  $("chips").innerHTML = [["🌙 Night", res.dark, "#4338CA"], ["🧊 Black ice", res.black_ice, "#0284C7"], ["😷 Poor air", aq.poor, "#92400E"],
+    ["🧠 NN used", res.nn_used, "#7C3AED"], ["🚨 " + (res.alerts || []).length + " alert(s)", (res.alerts || []).length, "#DC2626"]]
+    .map(([t, on, col]) => `<span class="chip ${on ? "on" : ""}" style="--cc:${col}">${t}</span>`).join("");
+  $("tiles").innerHTML = [
+    ["💡 Light", f(c.light_lux, 2) + " lux"], ["🌡️ Temperature", f(c.temperature_c) + " °C"], ["💧 Water on road", f(c.water_um, 0) + " µm"],
+    ["☁️ Humidity", f(c.humidity_pct, 0) + " %"], ["💨 Wind", f(c.wind_kmh, 0) + " km/h"], ["🚗 Traffic", f(c.traffic_cps, 1) + " cars/s"],
+    ["📜 Limit in the data", f(c.speed_limit, 0) + " km/h"], ["⚠️ Near-accidents", f(c.near_accidents, 0)],
+  ].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+
+  if (res.nn_used) {
+    const max = Math.max(2, ...res.nn_predictions.map(p => p.guarded));
+    $("bars").innerHTML = res.nn_predictions.map(p => `<div class="bar"><span>${p.limit} km/h</span>
+      <div class="track"><div class="fill ${p.limit === res.nn_limit ? "pick" : ""}" style="width:${100 * p.guarded / max}%;background:${LIMIT_COLOR[p.limit]}"></div>
+      <div class="thr" style="left:${100 / max}%"></div></div><span>${p.guarded.toFixed(2)}</span></div>`).join("");
+  } else $("bars").innerHTML = `<p class="note" style="font-size:14px">😴 Sleeping – it is light and there is no black ice. The network is only used when it is dark or the weather is bad.</p>`;
+
+  const pos = Math.min(100, (aq.aq_index || 0) / 1.8), thr = (aq.poor_threshold || 100) / 1.8;
+  const calls = (aq.tool_calls || []).map(t => `<li>🔧 ${t.tool}(${Object.values(t.input).join(", ")}) → ${JSON.stringify(t.result)}</li>`).join("");
+  $("aq").innerHTML = `<div class="tiles"><div class="tile"><div class="k">Index</div><div class="v">${aq.aq_index ?? "–"} ${aq.poor ? "😷" : "🍃"}</div></div>
+      <div class="tile"><div class="k">Reduction</div><div class="v">${aq.reduction ? "−" + aq.reduction : 0} km/h</div></div></div>
+    <div class="gauge"><b style="left:calc(${thr}% - 14px)">poor ▼</b><i style="left:calc(${pos}% - 3px)"></i></div>
+    <p class="note">Decided by: <b>${aq.source || "–"}</b>${aq.llm_answer ? ` · 🤖 “${aq.llm_answer}”` : ""}</p>
+    ${calls ? `<ul class="tools">${calls}</ul>` : ""}`;
+
+  const co2 = res.co2 || {};
+  const n = Math.min(12, Math.round((co2.trees_per_day || 0) / 50));
+  $("co2").innerHTML = co2.saved_kg > 0
+    ? `<div class="big">${f(co2.saved_kg, 1)} kg</div><div class="note">CO₂ avoided this hour on ${co2.segment_km} km (${f(co2.cars_per_hour, 0)} cars/h)</div>
+       <div class="trees">${"🌳".repeat(Math.max(1, n))}</div>
+       <p class="note">= what ${f(co2.trees_per_day, 0)} trees absorb in a day 🌳 · ${co2.g_per_km_at_limit} g/km at ${res.final_limit} km/h instead of ${co2.g_per_km_at_80} g/km at 80.</p>`
+    : `<div class="big" style="color:var(--muted)">0 kg</div><p class="note">🚗 At 80 km/h nothing is saved. Every reduction lowers the CO₂ per km a little (simple physical model, an assumption).</p>`;
+
+  const al = res.alerts || [];
+  $("alerts").innerHTML = al.length ? al.map(a => `<div class="alert ${a.level}" style="--ac:${ALERT_COLOR[a.type]}">
+      <div class="ic">${a.icon}</div><div><div class="to">${a.to}</div>${a.text}</div></div>`).join("")
+    : `<p class="note" style="font-size:14px">😌 All quiet – no accident, no ice, no sharp weather change.</p>`;
+  document.querySelectorAll(".cell").forEach(el => el.classList.toggle("cur", +el.dataset.h === res.hour));
+}
+
+async function loadDay() {
+  const rows = await api(`decisions?year=${encodeURIComponent(year)}&day=${$("day").value}`);
+  const by = Object.fromEntries(rows.map(r => [r.hour, r]));
+  $("daygrid").innerHTML = Array.from({ length: 24 }, (_, h) => {
+    const r = by[h];
+    if (!r) return `<div class="cell" data-h="${h}">${String(h).padStart(2, "0")}<b>·</b><span class="e"></span></div>`;
+    const types = (r.alerts || []).map(a => a.type);
+    const e = (r.dark ? "🌙" : "") + (r.black_ice ? "🧊" : "") + (r.aq_reduction ? "😷" : "") + (types.includes("emergency") ? "🚑" : "") + (types.includes("winter") ? "🧂" : "");
+    return `<div class="cell" data-h="${h}" title="${r.reason}" style="background:${LIMIT_COLOR[r.final_limit]}">${String(h).padStart(2, "0")}<b>${r.final_limit}</b><span class="e">${e}</span></div>`;
+  }).join("");
+  document.querySelectorAll(".cell").forEach(el => el.onclick = () => { $("hour").value = el.dataset.h; $("hour").oninput(); decideHour(); });
+  const co2 = rows.reduce((s, r) => s + (r.co2_saved_kg || 0), 0);
+  const count = (t) => rows.reduce((s, r) => s + (r.alerts || []).filter(a => a.type === t).length, 0);
+  $("totals").innerHTML = rows.length ? [
+    `🕒 <b>${rows.length}</b>/24 hours decided`, `🌍 <b>${f(co2, 0)} kg</b> CO₂ avoided`,
+    `🧂 <b>${count("winter")}</b> salt-truck alerts`, `🚑 <b>${count("emergency")}</b> emergency alerts`,
+    `🐢 average <b>${f(rows.reduce((s, r) => s + r.final_limit, 0) / rows.length, 0)} km/h</b>`].map(t => `<span class="total">${t}</span>`).join("")
+    : `<span class="total">Nothing decided yet for this day – press ▶ Play the day</span>`;
+}
+
+function busy(on) { $("go").disabled = on; $("err").textContent = on ? "" : $("err").textContent; }
+async function decideHour() {
+  busy(true);
+  try { show(await api("decide", { year, day: +$("day").value, hour: +$("hour").value })); await loadDay(); }
+  catch (e) { $("err").textContent = "⚠️ " + e.message; }
+  busy(false);
+}
+$("go").onclick = decideHour;
+
+$("play").onclick = async () => {
+  if (playing) { playing = false; return; }
+  playing = true; busy(true);
+  $("play").textContent = "⏳ Deciding 24 hours…"; $("play").className = "btn stop";
+  try {
+    const all = await api("decide_day", { year, day: +$("day").value });
+    await loadDay();
+    $("play").textContent = "⏹ Stop";
+    for (const res of all) {
+      if (!playing) break;
+      $("hour").value = res.hour; $("hour").oninput(); show(res);
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  } catch (e) { $("err").textContent = "⚠️ " + e.message; }
+  playing = false; busy(false); $("play").textContent = "▶ Play the day"; $("play").className = "btn play";
+};
+
+api("model").then(m => $("model").textContent = `🧠 model ${m.version} · ${m.train_years.join(" + ")} · MAE ${m.mae_test}`)
+  .catch(() => $("model").textContent = "🧠 model not available");
+loadDay().catch(() => {});
+</script>
+</body>
+</html>

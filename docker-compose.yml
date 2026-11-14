@@ -1,0 +1,106 @@
+# Speed Limit System - 7 components of the component diagram
+#   db           Database (PostgreSQL)
+#   ingestion    Data Ingestion Service      (one-shot job: CSV -> repaired hourly data)
+#   training     Training Pipeline           (one-shot job: trains the neural network)
+#   models       Model Store                 (volume with all model versions)
+#   airquality   Air Quality Service         (air-quality index + LLM agent with tools)
+#   speedlimit   Speed Limit Service         (router: rules, neural network, final limit)
+#   web          Backend API & Dashboard     (http://localhost:8000)
+
+x-app: &app
+  build: .
+  image: speed-limit-app:1.0
+  environment: &env
+    DATABASE_URL: postgresql+psycopg2://speed:speed@db:5432/speedlimit
+    MODEL_DIR: /models
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: speed
+      POSTGRES_PASSWORD: speed
+      POSTGRES_DB: speedlimit
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U speed -d speedlimit"]
+      interval: 5s
+      retries: 20
+
+  ingestion:
+    <<: *app
+    command: python ingestion.py
+    environment:
+      <<: *env
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  training:
+    <<: *app
+    command: python training.py
+    environment:
+      <<: *env
+      TRAIN_YEARS: ${TRAIN_YEARS:-N,N+1}
+    volumes:
+      - models:/models
+    depends_on:
+      ingestion:
+        condition: service_completed_successfully
+
+  airquality:
+    <<: *app
+    command: uvicorn airquality_service:app --host 0.0.0.0 --port 8002
+    environment:
+      <<: *env
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-claude-haiku-5-5}
+      POOR_THRESHOLD: "100"
+    depends_on:
+      ingestion:
+        condition: service_completed_successfully
+
+  speedlimit:
+    <<: *app
+    command: uvicorn speedlimit_service:app --host 0.0.0.0 --port 8001
+    environment:
+      <<: *env
+      AIRQUALITY_URL: http://airquality:8002
+      SEGMENT_KM: "1"          # km of highway per sign, used for the CO2 estimate
+    volumes:
+      - models:/models:ro
+    depends_on:
+      training:
+        condition: service_completed_successfully
+      airquality:
+        condition: service_started
+
+  web:
+    <<: *app
+    command: uvicorn web:app --host 0.0.0.0 --port 8000
+    environment:
+      SPEEDLIMIT_URL: http://speedlimit:8001
+    ports:
+      - "8000:8000"
+    depends_on:
+      - speedlimit
+
+  # Test suite (40 test cases, 8 components x 5). Not started by "docker compose up".
+  # Run it with:  docker compose run --rm tests
+  tests:
+    <<: *app
+    profiles: ["test"]
+    working_dir: /src
+    command: sh -c "pip install -q -r requirements-test.txt && python -m pytest"
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./:/src
+
+volumes:
+  pgdata:
+  models:
